@@ -4,10 +4,13 @@ import requests
 import time
 import joblib
 import numpy as np
+import random
 
 app=Flask(__name__)
 api = Api(app)
-api_key = "RGAPI-e10385bf-bd60-40bd-8c0c-34fb25aaf626"
+
+api_key = "RGAPI-35c111f2-3146-419a-b169-ee9b911a1dbc"
+
 
 
 
@@ -20,25 +23,41 @@ class lol(Resource):
 class LolModel(Resource):
     def get(self):
         return
+
 def getUid(name):
+    #api_key = api_list[random.randrange(0, 6)]
     URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key
     res=requests.get(URL)
     if res.status_code != 200:
         return None
     uid = res.json()["id"]
+
     return uid
 
-def current(id):
-    URL = "https://kr.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/"+id+"?api_key="+api_key
+def current_match(uid):
+    #api_key = api_list[random.randrange(0, 6)]
+    URL = "https://kr.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/"+uid+"?api_key="+api_key
     res = requests.get(URL)
-    if res.status_code!=200:
+    data = res.json()
+
+    if res.status_code !=200:
         return None
-    people=[]
-    for i in range(10):
-        people.append(res.json()['participants'][i]['summonerId'])
-    return people
+    inGame = {"status" : 200}
+    inGame["gameMode"] = "CLASSIC"
+    inGame["gameType"] = "MATCHED_GAME"
+    i=1
+    for person in data["participants"]:
+        inGame["player_{}".format(i)] = {}
+        inGame["player_{}".format(i)]["summonerName"] = person["summonerName"]
+        inGame["player_{}".format(i)]["fstSpellId"] = person["spell1Id"]
+        inGame["player_{}".format(i)]["scnSpellId"] = person["spell2Id"]
+        inGame["player_{}".format(i)]["championId"] = person["championId"]
+        i+=1
+    return inGame
+
 
 def uidToAccount(uid):
+    #api_key = api_list[random.randrange(0, 6)]
     URL ="https://kr.api.riotgames.com/tft/summoner/v1/summoners/"+uid+"?api_key="+api_key
     res = requests.get(URL)
     return res.json()['accountId']
@@ -50,17 +69,22 @@ def getData(name):
             'status' : 404,
             'data' : 'summoner not found'
         }
-    uid_list = current(uid)
-    if uid_list == None:
+    ingame = current_match(uid)
+    if ingame == None:
         return {
-            'status' : 404,
+            'status' : 400,
             'data' : 'not playing game'
         }
-    account_list = []
-    for uid in uid_list:
-        account_list.append(uidToAccount(uid))
 
-    player_avgStats = []
+    for i in range(1, 11):
+        ingame["player_{}".format(i)]["accountId"] = uidToAccount(getUid(ingame["player_{}".format(i)]["summonerName"]))
+
+    for i in range(1, 11):
+        ingame["player_{}".format(i)]["avgStats"] = get_10_game_stats(ingame["player_{}".format(i)]["accountId"])
+
+    return ingame
+
+    """
     for accountId in account_list:
         player_avgStats.append(get_10_game_stats(accountId))
     p10_data = {'stats': player_avgStats}
@@ -73,9 +97,12 @@ def getData(name):
     arr=np.array([data])
     predict=model.predict_proba(arr)
     return [player_avgStats,predict.tolist()]
+    """
 
 ## accountId 로 game id 따오기 -> list return
 def get_gameId(accountId):
+    #api_key = api_list[random.randrange(0,6)]
+    print(api_key)
     time.sleep(0.1)
     match = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key
     match_data = requests.get(match)
@@ -132,6 +159,7 @@ def get_10_game_stats(accountId):
 
 ## gamgId ,accountId 로 필요한 stat 따오기 ->dictionary return
 def get_playerData(gameId, accountId):
+    #api_key = api_list[random.randrange(0, 6)]
     time.sleep(0.1)
     match = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key
     match_data = requests.get(match)
@@ -152,7 +180,7 @@ def get_playerData(gameId, accountId):
                   }
     duration = match_data.json()['gameDuration'] / 60
     print(duration)
-    print(match_data.json()['participants'][playerNum]['timeline']['xpPerMinDeltas'])
+
     if 20 < duration:
         playerData['exp'] += match_data.json()['participants'][playerNum]['timeline']['xpPerMinDeltas']['0-10']
     if 30 < duration:

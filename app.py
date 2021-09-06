@@ -1,12 +1,12 @@
-from flask import Flask,request,jsonify
+from flask import Flask,request
 from flask_restx import Api,Resource
 import requests
 import time
-import pickle
 import aiohttp
 import asyncio
 import numpy as np
 import xgboost
+import dbconnect
 
 app=Flask(__name__)
 api = Api(app)
@@ -29,8 +29,8 @@ class api_key(Resource):
         global api_key
         return {"api_key" : api_key_}
 
-@api.route('/lol/<name>')
-class lol(Resource):
+@api.route('/lol/ingame/<name>')
+class Ingame(Resource):
     def get(self,name):
         start = time.time()
         uid = getUid(name)
@@ -88,7 +88,29 @@ class lol(Resource):
 
         return inGame
 
+@api.route("/board")
+class Board(Resource):
+    def get(self):
+        database = dbconnect.Database()
+        query = '''
+            SELECT id,name,content
+            FROM board
+            ORDER BY id DESC       
+        '''
+        rows = database.excuteAll(query)
+        return rows
 
+    def post(self):
+        data = request.json
+        name = data["name"]
+        content = data["content"]
+        database = dbconnect.Database()
+        query = '''INSERT INTO board (name,content)
+                    VALUES(%s,%s) '''
+
+        database.execute(query,(name,content))
+        database.commit()
+        return "OK"
 
 def getUid(name):
     #api_key = api_list[random.randrange(0, 6)]

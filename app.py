@@ -42,45 +42,45 @@ class lol(Resource):
         if not inGame:
             return {"status":404,"data": "not playing game"}
 
-        for idx in range(1, 11):
-            inGame["player_{}".format(idx)]["avgStats"] = {}
-            inGame["player_{}".format(idx)]["avgStats"]["kills"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["deaths"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["assists"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["gold"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["damage_taken"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["vision"] = 0
-            inGame["player_{}".format(idx)]["avgStats"]["exp"] = 0
+        for idx in range(10):
+            inGame["players"][idx]["avgStats"] = {}
+            inGame["players"][idx]["avgStats"]["kills"] = 0
+            inGame["players"][idx]["avgStats"]["deaths"] = 0
+            inGame["players"][idx]["avgStats"]["assists"] = 0
+            inGame["players"][idx]["avgStats"]["gold"] = 0
+            inGame["players"][idx]["avgStats"]["damage_dealt"] = 0
+            inGame["players"][idx]["avgStats"]["damage_taken"] = 0
+            inGame["players"][idx]["avgStats"]["vision"] = 0
+            inGame["players"][idx]["avgStats"]["exp"] = 0
 
         asyncio.set_event_loop(asyncio.SelectorEventLoop())
         loop = asyncio.get_event_loop()
         loop.run_until_complete(getData(inGame))
         data = []
-        for idx in range(1, 11):
-            inGame["player_{}".format(idx)]["avgStats"]["kills"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["kills"])
-            inGame["player_{}".format(idx)]["avgStats"]["deaths"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["deaths"])
-            inGame["player_{}".format(idx)]["avgStats"]["assists"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["assists"])
-            inGame["player_{}".format(idx)]["avgStats"]["gold"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["gold"])
-            inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"])
-            inGame["player_{}".format(idx)]["avgStats"]["damage_taken"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["damage_taken"])
-            inGame["player_{}".format(idx)]["avgStats"]["vision"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["vision"])
-            inGame["player_{}".format(idx)]["avgStats"]["exp"] /= 10
-            data.append(inGame["player_{}".format(idx)]["avgStats"]["exp"])
+        for idx in range(10):
+            inGame["players"][idx]["avgStats"]["kills"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["kills"])
+            inGame["players"][idx]["avgStats"]["deaths"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["deaths"])
+            inGame["players"][idx]["avgStats"]["assists"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["assists"])
+            inGame["players"][idx]["avgStats"]["gold"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["gold"])
+            inGame["players"][idx]["avgStats"]["damage_dealt"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["damage_dealt"])
+            inGame["players"][idx]["avgStats"]["damage_taken"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["damage_taken"])
+            inGame["players"][idx]["avgStats"]["vision"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["vision"])
+            inGame["players"][idx]["avgStats"]["exp"] /= 10
+            data.append(inGame["players"][idx]["avgStats"]["exp"])
 
         data_ = []
-        for i in range(1, 11):
-            for stat in inGame["player_{}".format(i)]["avgStats"]:
+        for idx in range(10):
+            for stat in inGame["players"][idx]["avgStats"]:
                 if stat == 'exp':
                     continue
-                data_.append(inGame["player_{}".format(i)]["avgStats"][stat])
+                data_.append(inGame["players"][idx]["avgStats"][stat])
 
         arr = np.array([data_])
         predict = model.predict(arr)
@@ -110,13 +110,14 @@ def current_match(uid):
     inGame = {"status" : 200}
     inGame["gameMode"] = "CLASSIC"
     inGame["gameType"] = "MATCHED_GAME"
-    i=1
+    inGame["players"] = [dict() for _ in range(10)]
+    i=0
     for person in data["participants"]:
-        inGame["player_{}".format(i)] = {}
-        inGame["player_{}".format(i)]["summonerName"] = person["summonerName"]
-        inGame["player_{}".format(i)]["fstSpellId"] = person["spell1Id"]
-        inGame["player_{}".format(i)]["scnSpellId"] = person["spell2Id"]
-        inGame["player_{}".format(i)]["championId"] = person["championId"]
+        #inGame["players"][i] = {}
+        inGame["players"][i]["summonerName"] = person["summonerName"]
+        inGame["players"][i]["fstSpellId"] = person["spell1Id"]
+        inGame["players"][i]["scnSpellId"] = person["spell2Id"]
+        inGame["players"][i]["championId"] = person["championId"]
         i+=1
     return inGame
 
@@ -126,7 +127,7 @@ async def getAccount(name,idx,inGame):
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
-            inGame["player_{}".format(idx)]["accountId"] = res["accountId"]
+            inGame["players"][idx]["accountId"] = res["accountId"]
 
 
 
@@ -151,7 +152,7 @@ async def get_10_game_stats(gameId,accountId,idx,inGame):
     URL = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key_
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
-            print("api call")
+            #print("api call")
             res = await response.json()
 
     for i in range(10):
@@ -161,13 +162,13 @@ async def get_10_game_stats(gameId,accountId,idx,inGame):
         except:
             return
     duration = res["gameDuration"]/60
-    inGame["player_{}".format(idx)]["avgStats"]["kills"] += res['participants'][playerNum]['stats']['kills']
-    inGame["player_{}".format(idx)]["avgStats"]["deaths"] += res['participants'][playerNum]['stats']['deaths']
-    inGame["player_{}".format(idx)]["avgStats"]["assists"] += res['participants'][playerNum]['stats']['assists']
-    inGame["player_{}".format(idx)]["avgStats"]["gold"] += res['participants'][playerNum]['stats']['goldEarned']/duration
-    inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"] += res['participants'][playerNum]['stats']['totalDamageDealtToChampions']/duration
-    inGame["player_{}".format(idx)]["avgStats"]["damage_taken"] += res['participants'][playerNum]['stats']['totalDamageTaken']/duration
-    inGame["player_{}".format(idx)]["avgStats"]["vision"] += res['participants'][playerNum]['stats']['visionScore']/duration
+    inGame["players"][idx]["avgStats"]["kills"] += res['participants'][playerNum]['stats']['kills']
+    inGame["players"][idx]["avgStats"]["deaths"] += res['participants'][playerNum]['stats']['deaths']
+    inGame["players"][idx]["avgStats"]["assists"] += res['participants'][playerNum]['stats']['assists']
+    inGame["players"][idx]["avgStats"]["gold"] += res['participants'][playerNum]['stats']['goldEarned']/duration
+    inGame["players"][idx]["avgStats"]["damage_dealt"] += res['participants'][playerNum]['stats']['totalDamageDealtToChampions']/duration
+    inGame["players"][idx]["avgStats"]["damage_taken"] += res['participants'][playerNum]['stats']['totalDamageTaken']/duration
+    inGame["players"][idx]["avgStats"]["vision"] += res['participants'][playerNum]['stats']['visionScore']/duration
     exp = 0
     if 20 < duration:
         exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['0-10']
@@ -177,7 +178,7 @@ async def get_10_game_stats(gameId,accountId,idx,inGame):
         exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['20-30']
     if 50 <= duration:
         exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['30-40']
-    inGame["player_{}".format(idx)]["avgStats"]["exp"] += exp/duration
+    inGame["players"][idx]["avgStats"]["exp"] += exp/duration
 
 
 
@@ -186,12 +187,12 @@ async def getData(inGame):
     #for i in range(1,11):
     #    getAccount(inGame["player_{}".format(i)]["summonerName"],i)
 
-    ac_task = [asyncio.ensure_future(getAccount(inGame["player_{}".format(i)]["summonerName"],i,inGame)) for i in range(1,11)]
+    ac_task = [asyncio.ensure_future(getAccount(inGame["players"][i]["summonerName"],i,inGame)) for i in range(10)]
     await asyncio.gather(*ac_task)
 
     queue = []
-    for i in range(1,11):
-        queue+= await get_gameId(inGame["player_{}".format(i)]["accountId"],i)
+    for i in range(10):
+        queue+= await get_gameId(inGame["players"][i]["accountId"],i)
     tasks = [asyncio.ensure_future(get_10_game_stats(gameId,accountId,idx,inGame)) for gameId,accountId,idx in queue]
     await asyncio.gather(*tasks)
 

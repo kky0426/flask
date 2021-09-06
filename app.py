@@ -2,31 +2,97 @@ from flask import Flask,request,jsonify
 from flask_restx import Api,Resource
 import requests
 import time
-import joblib
+import pickle
+import aiohttp
+import asyncio
 import numpy as np
-import random
+import xgboost
 
 app=Flask(__name__)
 api = Api(app)
 
-api_key = "RGAPI-35c111f2-3146-419a-b169-ee9b911a1dbc"
+api_key_ = "RGAPI-df6e0fe8-e1d7-49ed-9f0c-b14a10fc50f1"
 
 
+@api.route('/api/time')
+class gettime(Resource):
+    def get(self):
+        start = time.time()
+        URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+"학대견황구"+"?api_key="+api_key_
+        for i in range(10):
+            res = requests.get(URL)
+        return time.time()-start
 
+@api.route('/api_key')
+class api_key(Resource):
+    def get(self):
+        global api_key
+        return {"api_key" : api_key_}
 
 @api.route('/lol/<name>')
 class lol(Resource):
     def get(self,name):
-        return getData(name)
+        start = time.time()
+        uid = getUid(name)
+        if uid == None:
+            return {"status" : 400,"data":"summoner not found"}
 
-@api.route('/lol/model')
-class LolModel(Resource):
-    def get(self):
-        return
+        inGame = current_match(uid)
+        print(inGame)
+        if not inGame:
+            return {"status":404,"data": "not playing game"}
+
+        for idx in range(1, 11):
+            inGame["player_{}".format(idx)]["avgStats"] = {}
+            inGame["player_{}".format(idx)]["avgStats"]["kills"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["deaths"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["assists"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["gold"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["damage_taken"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["vision"] = 0
+            inGame["player_{}".format(idx)]["avgStats"]["exp"] = 0
+
+        asyncio.set_event_loop(asyncio.SelectorEventLoop())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(getData(inGame))
+        data = []
+        for idx in range(1, 11):
+            inGame["player_{}".format(idx)]["avgStats"]["kills"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["kills"])
+            inGame["player_{}".format(idx)]["avgStats"]["deaths"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["deaths"])
+            inGame["player_{}".format(idx)]["avgStats"]["assists"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["assists"])
+            inGame["player_{}".format(idx)]["avgStats"]["gold"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["gold"])
+            inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"])
+            inGame["player_{}".format(idx)]["avgStats"]["damage_taken"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["damage_taken"])
+            inGame["player_{}".format(idx)]["avgStats"]["vision"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["vision"])
+            inGame["player_{}".format(idx)]["avgStats"]["exp"] /= 10
+            data.append(inGame["player_{}".format(idx)]["avgStats"]["exp"])
+
+        data_ = []
+        for i in range(1, 11):
+            for stat in inGame["player_{}".format(i)]["avgStats"]:
+                if stat == 'exp':
+                    continue
+                data_.append(inGame["player_{}".format(i)]["avgStats"][stat])
+
+        arr = np.array([data_])
+        predict = model.predict(arr)
+        print(predict)
+
+        return inGame
+
+
 
 def getUid(name):
     #api_key = api_list[random.randrange(0, 6)]
-    URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key
+    URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key_
     res=requests.get(URL)
     if res.status_code != 200:
         return None
@@ -35,8 +101,7 @@ def getUid(name):
     return uid
 
 def current_match(uid):
-    #api_key = api_list[random.randrange(0, 6)]
-    URL = "https://kr.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/"+uid+"?api_key="+api_key
+    URL = "https://kr.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/"+uid+"?api_key="+api_key_
     res = requests.get(URL)
     data = res.json()
 
@@ -56,146 +121,85 @@ def current_match(uid):
     return inGame
 
 
-def uidToAccount(uid):
-    #api_key = api_list[random.randrange(0, 6)]
-    URL ="https://kr.api.riotgames.com/tft/summoner/v1/summoners/"+uid+"?api_key="+api_key
-    res = requests.get(URL)
-    return res.json()['accountId']
-
-def getData(name):
-    uid = getUid(name)
-    if uid==None:
-        return {
-            'status' : 404,
-            'data' : 'summoner not found'
-        }
-    ingame = current_match(uid)
-    if ingame == None:
-        return {
-            'status' : 400,
-            'data' : 'not playing game'
-        }
-
-    for i in range(1, 11):
-        ingame["player_{}".format(i)]["accountId"] = uidToAccount(getUid(ingame["player_{}".format(i)]["summonerName"]))
-
-    for i in range(1, 11):
-        ingame["player_{}".format(i)]["avgStats"] = get_10_game_stats(ingame["player_{}".format(i)]["accountId"])
-
-    return ingame
-
-    """
-    for accountId in account_list:
-        player_avgStats.append(get_10_game_stats(accountId))
-    p10_data = {'stats': player_avgStats}
-    data=[]
-    for stat in p10_data['stats']:
-        for k,v in stat.items():
-            if k=='exp':
-                continue
-            data.append(v)
-    arr=np.array([data])
-    predict=model.predict_proba(arr)
-    return [player_avgStats,predict.tolist()]
-    """
-
-## accountId 로 game id 따오기 -> list return
-def get_gameId(accountId):
-    #api_key = api_list[random.randrange(0,6)]
-    print(api_key)
-    time.sleep(0.1)
-    match = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key
-    match_data = requests.get(match)
-
-    gameId_list = []
-    for i in range(4):
-        try:
-            gameId_list.append(match_data.json()['matches'][i]['gameId'])
-        except:
-            continue
-
-    return gameId_list
-
-def get_10_game_stats(accountId):
-    gameId_list = get_gameId(accountId)
-    avgData = {"kills": 0, "deaths": 0, "assists": 0, "gold": 0, "damage_dealt": 0, "damage_taken": 0, "vision": 0,
-               "exp": 0}
-
-    for game in gameId_list:
-        playerData = get_playerData(game, accountId)
-        if playerData != None:
-            avgData["kills"] += playerData["kills"]
-            avgData["deaths"] += playerData["deaths"]
-            avgData["assists"] += playerData["assists"]
-            avgData["damage_dealt"] += playerData["damage_dealt"]
-            avgData["damage_taken"] += playerData["damage_taken"]
-            avgData["vision"] += playerData["vision"]
-            avgData["exp"] += playerData["exp"]
-            avgData["gold"] += playerData["gold"]
-
-    if len(gameId_list) == 0:
-        avgData["kills"] = 0
-        avgData["deaths"] = 0
-        avgData["assists"] = 0
-        avgData["damage_dealt"] = 0
-        avgData["damage_taken"] = 0
-        avgData["vision"] = 0
-        avgData["exp"] = 0
-        avgData["gold"] = 0
-    else:
-        avgData["kills"] /= len(gameId_list)
-        avgData["deaths"] /= len(gameId_list)
-        avgData["assists"] /= len(gameId_list)
-        avgData["damage_dealt"] /= len(gameId_list)
-        avgData["damage_taken"] /= len(gameId_list)
-        avgData["vision"] /= len(gameId_list)
-        avgData["exp"] /= len(gameId_list)
-        avgData["gold"] /= len(gameId_list)
-
-    time.sleep(0.1)
-
-    return avgData
+async def getAccount(name,idx,inGame):
+    URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key_
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as response:
+            res = await response.json()
+            inGame["player_{}".format(idx)]["accountId"] = res["accountId"]
 
 
-## gamgId ,accountId 로 필요한 stat 따오기 ->dictionary return
-def get_playerData(gameId, accountId):
-    #api_key = api_list[random.randrange(0, 6)]
-    time.sleep(0.1)
-    match = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key
-    match_data = requests.get(match)
+
+
+async def get_gameId(accountId,idx):
+    URL = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key_
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as response:
+            res = await response.json()
+
+
+            gameId_list = []
+            for i in range(10):
+                try:
+                    gameId_list.append((res['matches'][i]['gameId'],accountId,idx))
+                except:
+                    continue
+
+            return gameId_list
+
+async def get_10_game_stats(gameId,accountId,idx,inGame):
+    URL = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key_
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as response:
+            print("api call")
+            res = await response.json()
+
     for i in range(10):
         try:
-            if match_data.json()['participantIdentities'][i]['player']['accountId'] == accountId:
+            if res['participantIdentities'][i]['player']['accountId'] == accountId:
                 playerNum = i
         except:
             return
-    playerData = {"kills": match_data.json()['participants'][playerNum]['stats']['kills'],
-                  "deaths": match_data.json()['participants'][playerNum]['stats']['deaths'],
-                  "assists": match_data.json()['participants'][playerNum]['stats']['assists'],
-                  "gold": match_data.json()['participants'][playerNum]['stats']['goldEarned'],
-                  "damage_dealt": match_data.json()['participants'][playerNum]['stats']['totalDamageDealtToChampions'],
-                  "damage_taken": match_data.json()['participants'][playerNum]['stats']['totalDamageTaken'],
-                  "vision": match_data.json()['participants'][playerNum]['stats']['visionScore'],
-                  "exp": 0
-                  }
-    duration = match_data.json()['gameDuration'] / 60
-    print(duration)
-
+    duration = res["gameDuration"]/60
+    inGame["player_{}".format(idx)]["avgStats"]["kills"] += res['participants'][playerNum]['stats']['kills']
+    inGame["player_{}".format(idx)]["avgStats"]["deaths"] += res['participants'][playerNum]['stats']['deaths']
+    inGame["player_{}".format(idx)]["avgStats"]["assists"] += res['participants'][playerNum]['stats']['assists']
+    inGame["player_{}".format(idx)]["avgStats"]["gold"] += res['participants'][playerNum]['stats']['goldEarned']/duration
+    inGame["player_{}".format(idx)]["avgStats"]["damage_dealt"] += res['participants'][playerNum]['stats']['totalDamageDealtToChampions']/duration
+    inGame["player_{}".format(idx)]["avgStats"]["damage_taken"] += res['participants'][playerNum]['stats']['totalDamageTaken']/duration
+    inGame["player_{}".format(idx)]["avgStats"]["vision"] += res['participants'][playerNum]['stats']['visionScore']/duration
+    exp = 0
     if 20 < duration:
-        playerData['exp'] += match_data.json()['participants'][playerNum]['timeline']['xpPerMinDeltas']['0-10']
+        exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['0-10']
     if 30 < duration:
-        playerData['exp'] += match_data.json()['participants'][playerNum]['timeline']['xpPerMinDeltas']['10-20']
+        exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['10-20']
     if 40 < duration:
-        playerData['exp'] += match_data.json()['participants'][playerNum]['timeline']['xpPerMinDeltas']['20-30']
+        exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['20-30']
     if 50 <= duration:
-        playerData['exp'] += match_data.json()['participants'][playerNum]['timeline']['xpPerMinDeltas']['30-40']
+        exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['30-40']
+    inGame["player_{}".format(idx)]["avgStats"]["exp"] += exp/duration
 
-    for key, value in playerData.items():
-        if key in ['damage_dealt', 'damage_taken', 'exp', 'gold']:
-            playerData[key] = round(value / duration, 2)
 
-    return playerData
+
+async def getData(inGame):
+
+    #for i in range(1,11):
+    #    getAccount(inGame["player_{}".format(i)]["summonerName"],i)
+
+    ac_task = [asyncio.ensure_future(getAccount(inGame["player_{}".format(i)]["summonerName"],i,inGame)) for i in range(1,11)]
+    await asyncio.gather(*ac_task)
+
+    queue = []
+    for i in range(1,11):
+        queue+= await get_gameId(inGame["player_{}".format(i)]["accountId"],i)
+    tasks = [asyncio.ensure_future(get_10_game_stats(gameId,accountId,idx,inGame)) for gameId,accountId,idx in queue]
+    await asyncio.gather(*tasks)
+
+
+
+
 
 if __name__=="__main__":
-    model = joblib.load('lol_predict.pkl')
-    app.run(debug=False,host='0.0.0.0')
+    model = xgboost.XGBRegressor()
+    model.load_model("model.bst")
+    app.run(debug=True,host='0.0.0.0')

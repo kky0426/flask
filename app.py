@@ -7,8 +7,11 @@ import asyncio
 import numpy as np
 import xgboost
 import dbconnect
+import json
+from flask import make_response
 
 app=Flask(__name__)
+app.config["JSON_AS_ASCII"] = False
 api = Api(app)
 
 api_key_ = "RGAPI-df6e0fe8-e1d7-49ed-9f0c-b14a10fc50f1"
@@ -84,10 +87,11 @@ class Ingame(Resource):
 
         arr = np.array([data_])
         predict = model.predict(arr)
+        inGame["predict"] = predict.tolist()[0]
         print(predict)
-
-        return inGame
-
+        print(time.time()-start)
+        res =  json.dumps(inGame,ensure_ascii=False,indent=4)
+        return make_response(res)
 @api.route("/board")
 class Board(Resource):
     def get(self):
@@ -154,7 +158,7 @@ async def getAccount(name,idx,inGame):
 
 
 
-async def get_gameId(accountId,idx):
+async def get_gameId(accountId,idx,queue):
     URL = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key_
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
@@ -164,11 +168,11 @@ async def get_gameId(accountId,idx):
             gameId_list = []
             for i in range(10):
                 try:
-                    gameId_list.append((res['matches'][i]['gameId'],accountId,idx))
+                    queue.append((res['matches'][i]['gameId'],accountId,idx))
                 except:
                     continue
 
-            return gameId_list
+            #return gameId_list
 
 async def get_10_game_stats(gameId,accountId,idx,inGame):
     URL = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key_
@@ -212,9 +216,13 @@ async def getData(inGame):
     ac_task = [asyncio.ensure_future(getAccount(inGame["players"][i]["summonerName"],i,inGame)) for i in range(10)]
     await asyncio.gather(*ac_task)
 
+
     queue = []
-    for i in range(10):
-        queue+= await get_gameId(inGame["players"][i]["accountId"],i)
+    #for i in range(10):
+    #    queue+= await get_gameId(inGame["players"][i]["accountId"],i,queue)
+    id_task = [asyncio.ensure_future(get_gameId(inGame["players"][i]["accountId"],i,queue))for i in range(10)]
+    await  asyncio.gather(*id_task)
+
     tasks = [asyncio.ensure_future(get_10_game_stats(gameId,accountId,idx,inGame)) for gameId,accountId,idx in queue]
     await asyncio.gather(*tasks)
 

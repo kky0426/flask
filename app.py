@@ -24,11 +24,11 @@ class Ingame(Resource):
         start = time.time()
         uid = getUid(name)
         if uid == None:
-            return {"status" : 400,"data":"summoner not found"}
+            return make_response(json.dumps({"status" : 400,"data":"summoner not found"}))
 
         inGame = current_match(uid)
         if not inGame:
-            return {"status":404,"data": "not playing game"}
+            return make_response(json.dumps({"status":404,"data": "not playing game"}))
 
         for idx in range(10):
             inGame["players"][idx]["avgStats"] = {}
@@ -187,19 +187,19 @@ async def get_encrypted_id(name,idx,queue):
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
-            if res.status_code == 200:
-                queue.append((idx,res["id"]))
+            queue.append((idx,res["id"]))
 
 async def get_player_info(idx,encrypted_id,inGame):
     URL = "https://kr.api.riotgames.com/lol/league/v4/entries/by-summoner/"+encrypted_id+"?api_key="+api_key_
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
-            if res.status_code == 200:
-                inGame["players"][idx]["wins"] = res[0]["wins"]
-                inGame["players"][idx]["losses"] = res[0]["losses"]
-                inGame["players"][idx]["tier"] = res[0]["tier"]
-                inGame["players"][idx]["rank"] = res[0]["rank"]
+
+
+            inGame["players"][idx]["wins"] = res[0]["wins"]
+            inGame["players"][idx]["losses"] = res[0]["losses"]
+            inGame["players"][idx]["tier"] = res[0]["tier"]
+            inGame["players"][idx]["rank"] = res[0]["rank"]
 
 async def get_gameId(accountId,idx,queue):
     URL = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key_

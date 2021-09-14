@@ -17,20 +17,6 @@ api = Api(app)
 api_key_ = "RGAPI-df6e0fe8-e1d7-49ed-9f0c-b14a10fc50f1"
 
 
-@api.route('/api/time')
-class gettime(Resource):
-    def get(self):
-        start = time.time()
-        URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+"학대견황구"+"?api_key="+api_key_
-        for i in range(10):
-            res = requests.get(URL)
-        return time.time()-start
-
-@api.route('/api_key')
-class api_key(Resource):
-    def get(self):
-        global api_key
-        return {"api_key" : api_key_}
 
 @api.route('/lol/ingame/<name>')
 class Ingame(Resource):
@@ -41,7 +27,6 @@ class Ingame(Resource):
             return {"status" : 400,"data":"summoner not found"}
 
         inGame = current_match(uid)
-        print(inGame)
         if not inGame:
             return {"status":404,"data": "not playing game"}
 
@@ -92,6 +77,40 @@ class Ingame(Resource):
         print(time.time()-start)
         res =  json.dumps(inGame,ensure_ascii=False,indent=4)
         return make_response(res)
+
+@api.route("/lol/<name>")
+class Stats(Resource):
+    def get(self,name):
+        avgStats={}
+        avgStats["players"] = [{}]
+        avgStats["players"][0]["summonerName"] = name
+        avgStats["players"][0]["avgStats"] = {}
+        avgStats["players"][0]["avgStats"]["kills"] = 0
+        avgStats["players"][0]["avgStats"]["deaths"] = 0
+        avgStats["players"][0]["avgStats"]["assists"] = 0
+        avgStats["players"][0]["avgStats"]["gold"] = 0
+        avgStats["players"][0]["avgStats"]["damage_dealt"] = 0
+        avgStats["players"][0]["avgStats"]["damage_taken"] = 0
+        avgStats["players"][0]["avgStats"]["vision"] = 0
+        avgStats["players"][0]["avgStats"]["exp"] = 0
+
+        asyncio.set_event_loop(asyncio.SelectorEventLoop())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(getOneStats(avgStats))
+
+        avgStats["players"][0]["avgStats"]["kills"] /= 10
+        avgStats["players"][0]["avgStats"]["deaths"] /= 10
+        avgStats["players"][0]["avgStats"]["assists"] /= 10
+        avgStats["players"][0]["avgStats"]["gold"] /= 10
+        avgStats["players"][0]["avgStats"]["damage_dealt"] /= 10
+        avgStats["players"][0]["avgStats"]["damage_taken"] /= 10
+        avgStats["players"][0]["avgStats"]["vision"] /= 10
+        avgStats["players"][0]["avgStats"]["exp"] /= 10
+
+        res = json.dumps(avgStats, ensure_ascii=False, indent=4)
+        return make_response(res)
+
+
 @api.route("/board")
 class Board(Resource):
     def get(self):
@@ -116,8 +135,8 @@ class Board(Resource):
         database.commit()
         return "OK"
 
+
 def getUid(name):
-    #api_key = api_list[random.randrange(0, 6)]
     URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key_
     res=requests.get(URL)
     if res.status_code != 200:
@@ -164,21 +183,17 @@ async def get_gameId(accountId,idx,queue):
         async with session.get(URL) as response:
             res = await response.json()
 
-
-            gameId_list = []
             for i in range(10):
                 try:
                     queue.append((res['matches'][i]['gameId'],accountId,idx))
                 except:
                     continue
 
-            #return gameId_list
 
 async def get_10_game_stats(gameId,accountId,idx,inGame):
     URL = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key_
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
-            #print("api call")
             res = await response.json()
 
     for i in range(10):
@@ -210,16 +225,11 @@ async def get_10_game_stats(gameId,accountId,idx,inGame):
 
 async def getData(inGame):
 
-    #for i in range(1,11):
-    #    getAccount(inGame["player_{}".format(i)]["summonerName"],i)
-
     ac_task = [asyncio.ensure_future(getAccount(inGame["players"][i]["summonerName"],i,inGame)) for i in range(10)]
     await asyncio.gather(*ac_task)
 
 
     queue = []
-    #for i in range(10):
-    #    queue+= await get_gameId(inGame["players"][i]["accountId"],i,queue)
     id_task = [asyncio.ensure_future(get_gameId(inGame["players"][i]["accountId"],i,queue))for i in range(10)]
     await  asyncio.gather(*id_task)
 
@@ -227,7 +237,18 @@ async def getData(inGame):
     await asyncio.gather(*tasks)
 
 
+async def getOneStats(inGame):
 
+    ac_task = [asyncio.ensure_future(getAccount(inGame["players"][0]["summonerName"],0,inGame))]
+    await asyncio.gather(*ac_task)
+
+
+    queue = []
+    id_task = [asyncio.ensure_future(get_gameId(inGame["players"][0]["accountId"],0,queue))]
+    await  asyncio.gather(*id_task)
+
+    tasks = [asyncio.ensure_future(get_10_game_stats(gameId,accountId,idx,inGame)) for gameId,accountId,idx in queue]
+    await asyncio.gather(*tasks)
 
 
 if __name__=="__main__":

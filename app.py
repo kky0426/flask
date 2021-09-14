@@ -81,7 +81,7 @@ class Ingame(Resource):
 @api.route("/lol/<name>")
 class Stats(Resource):
     def get(self,name):
-        avgStats={}
+        avgStats={"status" : 0}
         avgStats["players"] = [{}]
         avgStats["players"][0]["summonerName"] = name
         avgStats["players"][0]["avgStats"] = {}
@@ -106,8 +106,14 @@ class Stats(Resource):
         avgStats["players"][0]["avgStats"]["damage_taken"] /= 10
         avgStats["players"][0]["avgStats"]["vision"] /= 10
         avgStats["players"][0]["avgStats"]["exp"] /= 10
+        print(avgStats["status"])
+        if avgStats["status"] == 400:
+            data = {"status" : 400,"data":"summoner not found"}
+        else:
+            data = {"status": 200}
+            data.update(avgStats["players"][0])
 
-        res = json.dumps(avgStats, ensure_ascii=False, indent=4)
+        res = json.dumps(data, ensure_ascii=False, indent=4)
         return make_response(res)
 
 
@@ -172,10 +178,28 @@ async def getAccount(name,idx,inGame):
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
-            inGame["players"][idx]["accountId"] = res["accountId"]
+            if response.status == 200:
+                inGame["players"][idx]["accountId"] = res["accountId"]
 
 
+async def get_encrypted_id(name,idx,queue):
+    URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key_
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as response:
+            res = await response.json()
+            if res.status_code == 200:
+                queue.append((idx,res["id"]))
 
+async def get_player_info(idx,encrypted_id,inGame):
+    URL = "https://kr.api.riotgames.com/lol/league/v4/entries/by-summoner/"+encrypted_id+"?api_key="+api_key_
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as response:
+            res = await response.json()
+            if res.status_code == 200:
+                inGame["players"][idx]["wins"] = res[0]["wins"]
+                inGame["players"][idx]["losses"] = res[0]["losses"]
+                inGame["players"][idx]["tier"] = res[0]["tier"]
+                inGame["players"][idx]["rank"] = res[0]["rank"]
 
 async def get_gameId(accountId,idx,queue):
     URL = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key_
@@ -228,6 +252,12 @@ async def getData(inGame):
     ac_task = [asyncio.ensure_future(getAccount(inGame["players"][i]["summonerName"],i,inGame)) for i in range(10)]
     await asyncio.gather(*ac_task)
 
+    encrypted_list = []
+    encrypted_task = [asyncio.ensure_future(get_encrypted_id(inGame["players"][i]["summonerName"],i,encrypted_list)) for i in range(10)]
+    await asyncio.gather(*encrypted_task)
+
+    info_task = [asyncio.ensure_future(get_player_info(idx,encrypted_id,inGame)) for idx,encrypted_id in encrypted_list]
+    await asyncio.gather(*info_task)
 
     queue = []
     id_task = [asyncio.ensure_future(get_gameId(inGame["players"][i]["accountId"],i,queue))for i in range(10)]
@@ -242,10 +272,13 @@ async def getOneStats(inGame):
     ac_task = [asyncio.ensure_future(getAccount(inGame["players"][0]["summonerName"],0,inGame))]
     await asyncio.gather(*ac_task)
 
-
     queue = []
-    id_task = [asyncio.ensure_future(get_gameId(inGame["players"][0]["accountId"],0,queue))]
-    await  asyncio.gather(*id_task)
+    if "accountId" in inGame["players"][0]:
+        id_task = [asyncio.ensure_future(get_gameId(inGame["players"][0]["accountId"],0,queue))]
+        await  asyncio.gather(*id_task)
+
+    if not queue:
+        inGame["status"] = 400
 
     tasks = [asyncio.ensure_future(get_10_game_stats(gameId,accountId,idx,inGame)) for gameId,accountId,idx in queue]
     await asyncio.gather(*tasks)

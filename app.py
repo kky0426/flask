@@ -17,12 +17,12 @@ api = Api(app)
 api_key_ = "RGAPI-df6e0fe8-e1d7-49ed-9f0c-b14a10fc50f1"
 
 
-
 @api.route('/lol/ingame/<name>')
 class Ingame(Resource):
     def get(self,name):
         start = time.time()
         uid = getUid(name)
+
         if uid == None:
             return make_response(json.dumps({"status" : 400,"data":"summoner not found"}))
 
@@ -106,6 +106,7 @@ class Stats(Resource):
         avgStats["players"][0]["avgStats"]["damage_taken"] /= 10
         avgStats["players"][0]["avgStats"]["vision"] /= 10
         avgStats["players"][0]["avgStats"]["exp"] /= 10
+        print(avgStats)
         print(avgStats["status"])
         if avgStats["status"] == 400:
             data = {"status" : 400,"data":"summoner not found"}
@@ -145,6 +146,7 @@ class Board(Resource):
 def getUid(name):
     URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key_
     res=requests.get(URL)
+
     if res.status_code != 200:
         return None
     uid = res.json()["id"]
@@ -194,46 +196,61 @@ async def get_player_info(idx,encrypted_id,inGame):
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
+            if not res:
+                inGame["players"][idx]["wins"] = 0
+                inGame["players"][idx]["losses"] =0
+                inGame["players"][idx]["tier"] = "UNKNOWN"
+                inGame["players"][idx]["rank"] = "UNKNOWN"
 
-
-            inGame["players"][idx]["wins"] = res[0]["wins"]
-            inGame["players"][idx]["losses"] = res[0]["losses"]
-            inGame["players"][idx]["tier"] = res[0]["tier"]
-            inGame["players"][idx]["rank"] = res[0]["rank"]
+            else:
+                inGame["players"][idx]["wins"] = res[0]["wins"]
+                inGame["players"][idx]["losses"] = res[0]["losses"]
+                inGame["players"][idx]["tier"] = res[0]["tier"]
+                inGame["players"][idx]["rank"] = res[0]["rank"]
 
 async def get_gameId(accountId,idx,queue):
-    URL = 'https://kr.api.riotgames.com/lol/match/v4/matchlists/by-account/' + accountId + '?season=13' + '&api_key=' + api_key_
+    #URL = 'https://kr.api.riotgames.com/lol/match/v5/matchlists/by-puuid/' + accountId + '?season=13' + '&api_key=' + api_key_
+    URL = 'https://asia.api.riotgames.com/lol/match/v5/matches/by-puuid/' + accountId + '/ids?start=0&count=20&api_key='+ api_key_
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
-
             for i in range(10):
                 try:
-                    queue.append((res['matches'][i]['gameId'],accountId,idx))
+                    queue.append((res[i],accountId,idx))
                 except:
                     continue
 
-
 async def get_10_game_stats(gameId,accountId,idx,inGame):
-    URL = 'https://kr.api.riotgames.com/lol/match/v4/matches/' + str(gameId) + '?api_key=' + api_key_
+    #URL = 'https://kr.api.riotgames.com/lol/match/v5/matches/' + str(gameId) + '?api_key=' + api_key_
+    URL = 'https://asia.api.riotgames.com/lol/match/v5/matches/'+gameId+'?api_key='+api_key_
     async with aiohttp.ClientSession() as session:
         async with session.get(URL) as response:
             res = await response.json()
-
+    '''
     for i in range(10):
         try:
             if res['participantIdentities'][i]['player']['accountId'] == accountId:
                 playerNum = i
         except:
             return
-    duration = res["gameDuration"]/60
-    inGame["players"][idx]["avgStats"]["kills"] += res['participants'][playerNum]['stats']['kills']
-    inGame["players"][idx]["avgStats"]["deaths"] += res['participants'][playerNum]['stats']['deaths']
-    inGame["players"][idx]["avgStats"]["assists"] += res['participants'][playerNum]['stats']['assists']
-    inGame["players"][idx]["avgStats"]["gold"] += res['participants'][playerNum]['stats']['goldEarned']/duration
-    inGame["players"][idx]["avgStats"]["damage_dealt"] += res['participants'][playerNum]['stats']['totalDamageDealtToChampions']/duration
-    inGame["players"][idx]["avgStats"]["damage_taken"] += res['participants'][playerNum]['stats']['totalDamageTaken']/duration
-    inGame["players"][idx]["avgStats"]["vision"] += res['participants'][playerNum]['stats']['visionScore']/duration
+    '''
+    for i in range(10):
+        try:
+            if res["metadata"]["participants"][i] == accountId:
+                playerNum = i
+                break
+        except:
+            return
+
+    duration = res["info"]["gameDuration"]/(60*60)
+    inGame["players"][idx]["avgStats"]["kills"] += res["info"]['participants'][playerNum]['kills']
+    inGame["players"][idx]["avgStats"]["deaths"] += res["info"]['participants'][playerNum]['deaths']
+    inGame["players"][idx]["avgStats"]["assists"] += res["info"]['participants'][playerNum]['assists']
+    inGame["players"][idx]["avgStats"]["gold"] += res["info"]['participants'][playerNum]['goldEarned']/duration
+    inGame["players"][idx]["avgStats"]["damage_dealt"] += res["info"]['participants'][playerNum]['totalDamageDealtToChampions']/duration
+    inGame["players"][idx]["avgStats"]["damage_taken"] += res["info"]['participants'][playerNum]['totalDamageTaken']/duration
+    inGame["players"][idx]["avgStats"]["vision"] += res["info"]['participants'][playerNum]['visionScore']/duration
+    """
     exp = 0
     if 20 < duration:
         exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['0-10']
@@ -243,38 +260,49 @@ async def get_10_game_stats(gameId,accountId,idx,inGame):
         exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['20-30']
     if 50 <= duration:
         exp+= res['participants'][playerNum]['timeline']['xpPerMinDeltas']['30-40']
-    inGame["players"][idx]["avgStats"]["exp"] += exp/duration
+    """
+    inGame["players"][idx]["avgStats"]["exp"] += res["info"]["participants"][playerNum]["champExperience"]/duration
 
 
 
 async def getData(inGame):
 
-    ac_task = [asyncio.ensure_future(getAccount(inGame["players"][i]["summonerName"],i,inGame)) for i in range(10)]
+    ac_task = [asyncio.ensure_future(getPuuid(inGame["players"][i]["summonerName"],i,inGame)) for i in range(10)]
     await asyncio.gather(*ac_task)
 
     encrypted_list = []
+
     encrypted_task = [asyncio.ensure_future(get_encrypted_id(inGame["players"][i]["summonerName"],i,encrypted_list)) for i in range(10)]
     await asyncio.gather(*encrypted_task)
-
+    print(encrypted_list,"encrypted")
     info_task = [asyncio.ensure_future(get_player_info(idx,encrypted_id,inGame)) for idx,encrypted_id in encrypted_list]
     await asyncio.gather(*info_task)
 
     queue = []
-    id_task = [asyncio.ensure_future(get_gameId(inGame["players"][i]["accountId"],i,queue))for i in range(10)]
+    id_task = [asyncio.ensure_future(get_gameId(inGame["players"][i]["puuid"],i,queue))for i in range(10)]
     await  asyncio.gather(*id_task)
 
     tasks = [asyncio.ensure_future(get_10_game_stats(gameId,accountId,idx,inGame)) for gameId,accountId,idx in queue]
     await asyncio.gather(*tasks)
 
 
+async def getPuuid(name,idx,inGame):
+    URL = "https://kr.api.riotgames.com/lol/summoner/v4/summoners/by-name/"+name+"?api_key="+api_key_
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as response:
+            res = await response.json()
+            if response.status == 200:
+
+                inGame["players"][idx]["puuid"] = res["puuid"]
+
 async def getOneStats(inGame):
 
-    ac_task = [asyncio.ensure_future(getAccount(inGame["players"][0]["summonerName"],0,inGame))]
+    ac_task = [asyncio.ensure_future(getPuuid(inGame["players"][0]["summonerName"],0,inGame))]
     await asyncio.gather(*ac_task)
 
     queue = []
-    if "accountId" in inGame["players"][0]:
-        id_task = [asyncio.ensure_future(get_gameId(inGame["players"][0]["accountId"],0,queue))]
+    if "puuid" in inGame["players"][0]:
+        id_task = [asyncio.ensure_future(get_gameId(inGame["players"][0]["puuid"],0,queue))]
         await  asyncio.gather(*id_task)
 
     if not queue:

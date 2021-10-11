@@ -14,7 +14,7 @@ app=Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 api = Api(app)
 
-api_key_ = "RGAPI-df6e0fe8-e1d7-49ed-9f0c-b14a10fc50f1"
+api_key_ = ""
 
 
 @api.route('/lol/ingame/<name>')
